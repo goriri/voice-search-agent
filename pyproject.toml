@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice-search-agent"
+version = "0.1.0"
+description = "Voice Search Agent combining Amazon Bedrock's Nova Sonic with Strands web search"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "pytz",
+    "boto3",
+    "requests",
+    "aws_sdk_bedrock_runtime",
+    "smithy-aws-core",
+    "strands-agents",
+    "mcp",
+    "sounddevice",
+    "pyaudio",
+    "uvx",
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -1,0 +1,1 @@
+__pycache__/\n*.py[cod]\n*.class\n*.so\n.Python\nenv/\nbuild/\ndevelop-eggs/\ndist/\ndownloads/\neggs/\n.eggs/\nlib/\nlib64/\nparts/\nsdist/\nvar/\n*.egg-info/\n.installed.cfg\n*.egg\n.env\n.venv\nvenv/\nENV/\n.idea/\n.vscode/\n.pytest_cache/\nPyAudio-0.2.14/\nPyAudio-0.2.14.tar.gz

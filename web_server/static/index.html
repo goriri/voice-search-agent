@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Search Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            text-align: center;
+        }
+        #recordButton {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 20px;
+            cursor: pointer;
+        }
+        #status {
+            margin: 20px;
+            font-style: italic;
+        }
+        #conversation {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            min-height: 200px;
+            text-align: left;
+        }
+        .user-message {
+            color: blue;
+            margin: 10px 0;
+        }
+        .assistant-message {
+            color: green;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Voice Search Demo</h1>
+        <button id="recordButton">Start Recording</button>
+        <div id="status">Ready to record</div>
+        <div id="conversation"></div>
+    </div>
+
+    <script>
+        let ws;
+        let mediaRecorder;
+        let isRecording = false;
+        let audioContext;
+        let audioQueue = [];
+        let isPlaying = false;
+
+        // Initialize WebSocket connection
+        function initWebSocket() {
+            const wsPort = 8081;
+            ws = new WebSocket(`ws://localhost:${wsPort}`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('status').textContent = 'Connected to server';
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                document.getElementById('status').textContent = 'Disconnected from server';
+            };
+            
+            ws.onmessage = async (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'audio') {
+                    // Handle incoming audio
+                    playAudio(message.data);
+                } else if (message.type === 'text') {
+                    // Display text response
+                    addMessage('Assistant', message.data);
+                }
+            };
+        }
+
+        // Initialize audio context for playback
+        async function initAudioContext() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            await audioContext.resume();
+        }
+
+        // Play received audio
+        async function playAudio(base64Audio) {
+            try {
+                const audioData = atob(base64Audio);
+                const arrayBuffer = new ArrayBuffer(audioData.length);
+                const view = new Uint8Array(arrayBuffer);
+                for (let i = 0; i < audioData.length; i++) {
+                    view[i] = audioData.charCodeAt(i);
+                }
+                
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                source.start(0);
+            } catch (error) {
+                console.error('Error playing audio:', error);
+            }
+        }
+
+        // Add message to conversation
+        function addMessage(role, text) {
+            const conversation = document.getElementById('conversation');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = role.toLowerCase() + '-message';
+            messageDiv.textContent = `${role}: ${text}`;
+            conversation.appendChild(messageDiv);
+            conversation.scrollTop = conversation.scrollHeight;
+        }
+
+        // Handle recording button click
+        async function toggleRecording() {
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    
+                    mediaRecorder.ondataavailable = async (event) => {
+                        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+                            const arrayBuffer = await event.data.arrayBuffer();
+                            const base64Audio = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                            ws.send(JSON.stringify({
+                                type: 'audio',
+                                data: base64Audio
+                            }));
+                        }
+                    };
+                    
+                    // Start recording
+                    ws.send(JSON.stringify({ type: 'start' }));
+                    mediaRecorder.start(100); // Send audio chunks every 100ms
+                    isRecording = true;
+                    document.getElementById('recordButton').textContent = 'Stop Recording';
+                    document.getElementById('status').textContent = 'Recording...';
+                    
+                } catch (error) {
+                    console.error('Error starting recording:', error);
+                    document.getElementById('status').textContent = 'Error: ' + error.message;
+                }
+            } else {
+                // Stop recording
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                ws.send(JSON.stringify({ type: 'stop' }));
+                isRecording = false;
+                document.getElementById('recordButton').textContent = 'Start Recording';
+                document.getElementById('status').textContent = 'Ready to record';
+            }
+        }
+
+        // Initialize everything when the page loads
+        window.onload = async () => {
+            await initAudioContext();
+            initWebSocket();
+            document.getElementById('recordButton').onclick = toggleRecording;
+        };
+    </script>
+</body>
+</html>

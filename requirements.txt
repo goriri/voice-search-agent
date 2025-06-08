@@ -1,0 +1,11 @@
+pytz==2024.1
+boto3==1.34.39
+requests==2.31.0
+aws_sdk_bedrock_runtime
+smithy-aws-core
+strands-agents
+mcp
+sounddevice
+pyaudio>=0.2.11
+uvx
+pytest
