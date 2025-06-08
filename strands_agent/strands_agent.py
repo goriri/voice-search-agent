@@ -8,6 +8,8 @@ import json
 import requests
 import re
 
+LANG_SEARCH_TOKEN = os.environ.get("LANG_SEARCH_TOKEN", None)
+
 @tool
 def weather(lat, lon: float) -> str:
     """Get weather information for a given lat and lon
@@ -47,7 +49,7 @@ def web_search(query: str) -> str:
         "summary": True,
         "count": 1
     }
-    basic = BearerAuth('sk-7c7d75b9cab64e1eaf9f71b95cf184f8')
+    basic = BearerAuth(LANG_SEARCH_TOKEN)
     response = requests.post(url, json=params, auth=basic)
     result = response.json()
     
