@@ -7,8 +7,53 @@ import os
 import json
 import requests
 import re
+from PIL import Image
+from pathlib import Path
+from dotenv import load_dotenv
 
-LANG_SEARCH_TOKEN = os.environ.get("LANG_SEARCH_TOKEN", None)
+load_dotenv("../.env")
+LANG_SEARCH_TOKEN = os.environ.get('LANG_SEARCH_TOKEN', '')
+IMAGES_DIR = os.environ.get('IMAGES_DIR', Path(__file__).parent.parent / "images")
+
+print(IMAGES_DIR)
+@tool
+def search_images(keyword: str) -> str:
+    """Search for images in the images directory using keywords.
+    
+    Args:
+        keyword: The keyword to search for in image filenames
+    
+    Returns:
+        str: Path to the found image or error message if not found
+    """
+    # Ensure images directory exists
+    # if not os.path.exists(IMAGES_DIR):
+    #     os.makedirs(IMAGES_DIR)
+    
+    # Convert keyword to lowercase for case-insensitive search
+    keyword = keyword.lower()
+
+    print(f"Searching for images with keyword: {keyword}")
+    
+    # Search for images with the keyword in their filename
+    found_images = []
+    for file in os.listdir(IMAGES_DIR):
+        if file.lower().find(keyword) != -1 and any(file.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif']):
+            found_images.append(file)
+    
+    if not found_images:
+        return f"No images found matching keyword: {keyword}"
+    
+    # Return the path of the first matching image
+    image_path = os.path.join(IMAGES_DIR, found_images[0])
+    
+    try:
+        # Try to open the image to verify it's valid
+        with Image.open(image_path) as img:
+            img.show()  # This will open the image in the default image viewer
+        return f"Found and opened image: {image_path}"
+    except Exception as e:
+        return f"Error opening image {image_path}: {str(e)}"
 
 @tool
 def weather(lat, lon: float) -> str:
@@ -92,11 +137,11 @@ class StrandsAgent:
         )
         # Create a Strands Agent with web search capabilities
         tools = self.aws_location_srv_tools
-        tools.extend([weather, web_search])
+        tools.extend([weather, web_search, search_images])
         self.agent = Agent(
             tools=tools, 
             model=bedrock_model,
-            system_prompt="You are a helpful assistant that can do web searches. Please include your response within the <response></response> tag."
+            system_prompt="You are a helpful assistant that can do web searches and search for local images. Please include your response within the <response></response> tag."
         )
 
     def query(self, input):

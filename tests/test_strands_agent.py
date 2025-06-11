@@ -1,30 +1,31 @@
-from strands_agent.strands_agent import StrandsAgent
+from strands_agent.strands_agent import StrandsAgent, search_images
 from strands_agent import web_search
 from unittest.mock import patch, MagicMock
 import unittest
+import os
+import shutil
+import tempfile
+from PIL import Image
+from dotenv import load_dotenv
+
+load_dotenv("../.env")
+
 
 class TestStrandsAgent(unittest.TestCase):
 
-    # def test_web_search_1(self):
-    #     """
-    #     Test that web_search returns the correct abstract when a valid response is received.
-    #     """
-    #     mock_response = MagicMock()
-    #     mock_response.json.return_value = {
-    #         "data": {
-    #             "webPages": {
-    #                 "value": [
-    #                     {
-    #                         "summary": "This is a test abstract"
-    #                     }
-    #                 ]
-    #             }
-    #         }
-    #     }
+    def test_search_images_found(self):
+        """Test that search_images finds an image with a matching keyword."""
+        with patch('PIL.Image.Image.show') as mock_show:
+            result = search_images("icons")
+            print(result)
+            self.assertTrue("Found and opened image" in result)
+            self.assertTrue("AWS icons.png" in result)
+            mock_show.assert_called_once()
 
-    #     with patch('requests.post', return_value=mock_response):
-    #         result = web_search("test query")
-    #         self.assertEqual(result, "This is a test abstract")
+    def test_search_images_not_found(self):
+        """Test that search_images returns appropriate message when no images are found."""
+        result = search_images("nonexistent")
+        self.assertTrue("No images found matching keyword" in result)
 
     def test_web_search_empty_query(self):
         """

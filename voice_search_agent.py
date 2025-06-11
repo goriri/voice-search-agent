@@ -140,6 +140,25 @@ class BedrockStreamManager:
         }
     }'''
 
+    TOOL_CONTENT_START_EVENT = '''{
+        "event": {
+            "contentStart": {
+                "promptName": "%s",
+                "contentName": "%s",
+                "interactive": false,
+                "type": "TOOL",
+                "role": "TOOL",
+                "toolResultInputConfiguration": {
+                    "toolUseId": "%s",
+                    "type": "TEXT",
+                    "textInputConfiguration": {
+                        "mediaType": "text/plain"
+                    }
+                }
+            }
+        }
+    }'''
+
     PROMPT_END_EVENT = '''{
         "event": {
             "promptEnd": {
@@ -153,6 +172,17 @@ class BedrockStreamManager:
             "sessionEnd": {}
         }
     }'''
+    
+    TOOL_SCHEMA = '''{
+        "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to find relevant information"
+                }
+            },
+            "required": ["query"]
+        }'''
     
     def __init__(self, model_id='amazon.nova-sonic-v1:0', region='us-east-1'):
         """Initialize the stream manager."""
@@ -181,6 +211,7 @@ class BedrockStreamManager:
         self.prompt_name = str(uuid.uuid4())
         self.content_name = str(uuid.uuid4())
         self.audio_content_name = str(uuid.uuid4())
+        self.user_query = ""
         
         # Initialize Strands Agent for web search
         self.strands_agent = StrandsAgent()
@@ -205,7 +236,7 @@ class BedrockStreamManager:
             self.stream_response = await time_it_async("invoke_model_with_bidirectional_stream", lambda : self.bedrock_client.invoke_model_with_bidirectional_stream(
                 InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)))
             self.is_active = True
-            default_system_prompt = "You are a helpful assistant that can do web searches and find the latest information for the user."
+            default_system_prompt = "You are a helpful assistant that can do web searches. You can also search and open local images as new a new capability. Never say I can't search or open images."
             
             # Send initialization events
             prompt_event = self.start_prompt()
@@ -253,6 +284,22 @@ class BedrockStreamManager:
                         "voiceId": "matthew",
                         "encoding": "base64",
                         "audioType": "SPEECH"
+                    },
+                    "toolUseOutputConfiguration": {
+                        "mediaType": "application/json"
+                    },
+                    "toolConfiguration": {
+                        "tools": [
+                            {
+                                "toolSpec": {
+                                    "name": "searchimages",
+                                    "description": "search and open local images",
+                                    "inputSchema": {
+                                        "json": self.TOOL_SCHEMA
+                                    }
+                                }
+                            }
+                        ]
                     }
                 }
             }
@@ -289,6 +336,46 @@ class BedrockStreamManager:
         content_start_event = self.CONTENT_START_EVENT % (self.prompt_name, self.audio_content_name)
         await self.send_raw_event(content_start_event)
     
+    async def send_tool_start_event(self, content_name):
+        """Send a tool content start event to the Bedrock stream."""
+        content_start_event = self.TOOL_CONTENT_START_EVENT % (self.prompt_name, content_name, self.toolUseId)
+        debug_print(f"Sending tool start event: {content_start_event}")  
+        await self.send_raw_event(content_start_event)
+
+    async def send_tool_result_event(self, content_name, tool_result):
+        """Send a tool content event to the Bedrock stream."""
+        # Use the actual tool result from processToolUse
+        tool_result_event = self.tool_result_event(content_name=content_name, content=tool_result, role="TOOL")
+        debug_print(f"Sending tool result event: {tool_result_event}")
+        await self.send_raw_event(tool_result_event)
+    
+    async def send_tool_content_end_event(self, content_name):
+        """Send a tool content end event to the Bedrock stream."""
+        tool_content_end_event = self.CONTENT_END_EVENT % (self.prompt_name, content_name)
+        debug_print(f"Sending tool content event: {tool_content_end_event}")
+        await self.send_raw_event(tool_content_end_event)
+    
+        
+    async def send_prompt_end_event(self):
+        """Close the stream and clean up resources."""
+        if not self.is_active:
+            debug_print("Stream is not active")
+            return
+        
+        prompt_end_event = self.PROMPT_END_EVENT % (self.prompt_name)
+        await self.send_raw_event(prompt_end_event)
+        debug_print("Prompt ended")
+        
+    async def send_session_end_event(self):
+        """Send a session end event to the Bedrock stream."""
+        if not self.is_active:
+            debug_print("Stream is not active")
+            return
+
+        await self.send_raw_event(self.SESSION_END_EVENT)
+        self.is_active = False
+        debug_print("Session ended")
+
     async def _process_audio_input(self):
         """Process audio input from the queue and send to Bedrock."""
         while self.is_active:
@@ -338,6 +425,39 @@ class BedrockStreamManager:
         await self.send_raw_event(content_end_event)
         debug_print("Audio ended")
     
+    def tool_result_event(self, content_name, content, role):
+        """Create a tool result event"""
+
+        if isinstance(content, dict):
+            content_json_string = json.dumps(content)
+        else:
+            content_json_string = content
+            
+        tool_result_event = {
+            "event": {
+                "toolResult": {
+                    "promptName": self.prompt_name,
+                    "contentName": content_name,
+                    "content": content_json_string
+                }
+            }
+        }
+        return json.dumps(tool_result_event)
+    
+    async def processToolUse(self, toolName, toolUseContent):
+        query = ""
+        if toolUseContent.get("content"):
+            # Parse the JSON string in the content field
+            query_json = json.loads(toolUseContent.get("content"))
+            query = query_json.get("query")  # Pass the JSON string directly to the agent
+            print(f"Extracted query: {query}")
+
+        print(f"Processing tool use: {toolName} with content: {query} and user query: {self.user_query}")
+        
+        response = self.strands_agent.query(self.user_query)
+        print(f"Tool use response: {response}")
+        return {"result": response}
+
     async def _process_responses(self):
         """Process incoming responses from Bedrock."""
         try:            
@@ -381,20 +501,7 @@ class BedrockStreamManager:
                                     # Process text through Strands agent if it's a user query
                                     if role == "USER":
                                         print(f"User query: {text_content}")
-                                        # Get response from Strands agent
-                                        strands_response = self.strands_agent.query(text_content)
-                                        print(f"Strands response: {strands_response}")
-                                        
-                                        # Send the response back through Nova Sonic
-                                        response_content_name = str(uuid.uuid4())
-                                        text_content_start = self.TEXT_CONTENT_START_EVENT % (self.prompt_name, response_content_name, "ASSISTANT")
-                                        text_content_event = self.TEXT_INPUT_EVENT % (self.prompt_name, response_content_name, strands_response)
-                                        text_content_end = self.CONTENT_END_EVENT % (self.prompt_name, response_content_name)
-                                        
-                                        await self.send_raw_event(text_content_start)
-                                        await self.send_raw_event(text_content_event)
-                                        await self.send_raw_event(text_content_end)
-                                    
+                                        self.user_query = text_content
                                     if (self.role == "ASSISTANT" and self.display_assistant_text):
                                         print(f"Assistant: {text_content}")
                                     elif (self.role == "USER"):
@@ -404,10 +511,22 @@ class BedrockStreamManager:
                                     audio_content = json_data['event']['audioOutput']['content']
                                     audio_bytes = base64.b64decode(audio_content)
                                     await self.audio_output_queue.put(audio_bytes)
-                                
+                                elif 'toolUse' in json_data['event']:
+                                    self.toolUseContent = json_data['event']['toolUse']
+                                    self.toolName = json_data['event']['toolUse']['toolName']
+                                    self.toolUseId = json_data['event']['toolUse']['toolUseId']
+                                    debug_print(f"Tool use detected: {self.toolName}, ID: {self.toolUseId}")
+                                elif 'contentEnd' in json_data['event'] and json_data['event'].get('contentEnd', {}).get('type') == 'TOOL':
+                                    debug_print("Processing tool use and sending result")
+                                    toolResult = await self.processToolUse(self.toolName, self.toolUseContent)
+                                    toolContent = str(uuid.uuid4())
+                                    await self.send_tool_start_event(toolContent)
+                                    await self.send_tool_result_event(toolContent, toolResult)
+                                    await self.send_tool_content_end_event(toolContent)
                                 elif 'completionEnd' in json_data['event']:
                                     # Handle end of conversation, no more response will be generated
                                     print("End of response sequence")
+                                
                             
                             # Put the response in the output queue for other components
                             await self.output_queue.put(json_data)
