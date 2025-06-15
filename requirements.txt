@@ -9,3 +9,5 @@ sounddevice
 pyaudio>=0.2.11
 pytest
 Pillow==10.2.0
+chromadb[clip]
+numpy<2

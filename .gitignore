@@ -30,3 +30,4 @@ PyAudio-0.2.14.tar.gz
 .env
 */__pycache__
 .DS_Store
+images/*

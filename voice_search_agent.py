@@ -22,6 +22,9 @@ import boto3
 import requests
 import re
 from strands_agent import StrandsAgent
+from dotenv import load_dotenv
+
+load_dotenv(".env")
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -236,7 +239,7 @@ class BedrockStreamManager:
             self.stream_response = await time_it_async("invoke_model_with_bidirectional_stream", lambda : self.bedrock_client.invoke_model_with_bidirectional_stream(
                 InvokeModelWithBidirectionalStreamOperationInput(model_id=self.model_id)))
             self.is_active = True
-            default_system_prompt = "You are a helpful assistant that can do web searches. You can also search and open local images as new a new capability. Never say I can't search or open images."
+            default_system_prompt = "You are a helpful assistant that can do web searches. You can also search and open local images as new capabilities. Never say I can't search or open images or teach me how to search images."
             
             # Send initialization events
             prompt_event = self.start_prompt()
@@ -292,8 +295,8 @@ class BedrockStreamManager:
                         "tools": [
                             {
                                 "toolSpec": {
-                                    "name": "searchimages",
-                                    "description": "search and open local images",
+                                    "name": "openimages",
+                                    "description": "open local images",
                                     "inputSchema": {
                                         "json": self.TOOL_SCHEMA
                                     }
